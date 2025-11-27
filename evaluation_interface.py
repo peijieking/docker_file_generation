@@ -303,6 +303,7 @@ class EvaluationInterface:
         
         # 定义评估指标
         evaluation_metrics = [
+            "git push",
             "任务完成轮次",
             "语言统一", 
             "重复动作",
@@ -352,6 +353,11 @@ class EvaluationInterface:
             
     def create_tab_content(self, parent, title):
         """创建单个标签页的内容"""
+        # 特殊处理git push标签页
+        if title == "git push":
+            self.create_git_push_tab_content(parent)
+            return
+        
         # 创建内容框架
         content_frame = ttk.Frame(parent)
         content_frame.pack(fill="both", expand=True)
@@ -397,6 +403,101 @@ class EvaluationInterface:
         
         # 存储文本组件引用
         setattr(self, f"{title.replace(' ', '_').lower()}_text", content_text)
+
+    def create_git_push_tab_content(self, parent):
+        """创建git push标签页的上下结构布局"""
+        # 创建主框架
+        main_frame = ttk.Frame(parent)
+        main_frame.pack(fill="both", expand=True)
+        
+        # 上方区域：分支名称输入框
+        top_frame = ttk.Frame(main_frame)
+        top_frame.pack(fill="x", padx=20, pady=20)
+        
+        # 分支名称标签
+        branch_label = ttk.Label(top_frame, text="分支名称:", font=('Arial', 10, 'bold'))
+        branch_label.pack(side="left", padx=(0, 10))
+        
+        # 分支名称输入框
+        self.branch_entry = ttk.Entry(top_frame, font=('Arial', 10), width=30)
+        self.branch_entry.pack(side="left", padx=(0, 20))
+        self.branch_entry.insert(0, "seed_01")  # 默认值
+        
+        # 下方区域：命令显示区
+        bottom_frame = ttk.Frame(main_frame)
+        bottom_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        
+        # 命令显示文本区域
+        commands_frame = ttk.Frame(bottom_frame)
+        commands_frame.pack(fill="both", expand=True)
+        
+        self.commands_text = tk.Text(commands_frame, 
+                                   font=('Courier New', 10),
+                                   wrap="word",
+                                   bg="#f5f5f5",
+                                   relief="solid",
+                                   borderwidth=1,
+                                   state="normal")
+        
+        # 添加滚动条
+        scrollbar = ttk.Scrollbar(commands_frame, orient="vertical", command=self.commands_text.yview)
+        self.commands_text.configure(yscrollcommand=scrollbar.set)
+        
+        self.commands_text.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # 创建按钮框架（放在右下角）
+        button_frame = ttk.Frame(bottom_frame)
+        button_frame.pack(side="bottom", fill="x", pady=(10, 0))
+        
+        # 添加复制按钮
+        copy_button = ttk.Button(button_frame, 
+                               text="复制内容",
+                               style="Custom.TButton",
+                               command=lambda: self.copy_text_content(self.commands_text))
+        copy_button.pack(side="right", padx=10, pady=5)
+        
+        # 初始显示命令
+        self.update_git_commands_display()
+        
+        # 绑定分支名称输入框的变化事件
+        self.branch_entry.bind('<KeyRelease>', lambda event: self.update_git_commands_display())
+
+    def update_git_commands_display(self):
+        """根据分支名称更新命令显示"""
+        branch_name = self.branch_entry.get().strip()
+        if not branch_name:
+            branch_name = "seed_01"
+        
+        commands = f"""git checkout main
+git checkout -b {branch_name}
+git add .
+git commit -m update
+git push -u origin {branch_name}"""
+        
+        self.commands_text.config(state="normal")
+        self.commands_text.delete("1.0", "end")
+        self.commands_text.insert("1.0", commands)
+        self.commands_text.config(state="disabled")
+
+    def execute_git_commands(self):
+        """执行Git命令序列"""
+        branch_name = self.branch_entry.get().strip()
+        if not branch_name:
+            messagebox.showerror("错误", "请输入分支名称")
+            return
+        
+        # 导入git_operations模块
+        from git_operations import execute_git_commands
+        
+        # 执行Git命令
+        success, message = execute_git_commands(branch_name)
+        
+        if success:
+            messagebox.showinfo("成功", f"Git命令执行成功！\n{message}")
+        else:
+            messagebox.showerror("错误", f"Git命令执行失败！\n{message}")
         
     def on_tab_changed(self, event):
         """标签页切换事件处理"""
@@ -562,20 +663,26 @@ class EvaluationInterface:
             print(f"错误: 读取文件时发生异常 - {e}")
             return "读取错误"
 
-    def copy_text_content(self, text_widget):
-        """复制文本内容到剪贴板"""
+    def copy_text_content(self, tab_name):
+        """复制指定标签页的文本内容到剪贴板"""
         try:
-            # 获取文本内容
-            content = text_widget.get("1.0", "end-1c")
-            if content:
-                # 复制到剪贴板
-                self.root.clipboard_clear()
-                self.root.clipboard_append(content)
-                # 在状态栏显示成功消息
-                self.update_status("✓ 内容已复制到剪贴板")
+            # 从text_widgets字典中获取对应的文本组件
+            if hasattr(self, 'text_widgets') and tab_name in self.text_widgets:
+                text_widget = self.text_widgets[tab_name]
+                # 获取文本内容
+                content = text_widget.get("1.0", "end-1c")
+                if content:
+                    # 复制到剪贴板
+                    self.root.clipboard_clear()
+                    self.root.clipboard_append(content)
+                    # 在状态栏显示成功消息
+                    self.update_status("✓ 内容已复制到剪贴板")
+                else:
+                    # 在状态栏显示失败消息
+                    self.update_status("⚠ 文本内容为空，无法复制")
             else:
-                # 在状态栏显示失败消息
-                self.update_status("⚠ 文本内容为空，无法复制")
+                # 在状态栏显示错误消息
+                self.update_status(f"✗ 未找到标签页 '{tab_name}' 的文本组件")
         except Exception as e:
             # 在状态栏显示错误消息
             self.update_status(f"✗ 复制过程中发生错误: {str(e)}")
@@ -601,12 +708,12 @@ class EvaluationInterface:
                         filename = filename.strip()
                         rounds_info = rounds_info.strip()
                         
-                        # 提取轮次数字 - 从"1轮"中提取数字1
+                        # 提取轮次数字
                         rounds_match = re.search(r'(\d+)', rounds_info)
                         if rounds_match:
                             rounds = rounds_match.group(1)
                         else:
-                            rounds = "1"  # 默认每个文件1轮
+                            rounds = "0"
                         
                         # 提取人类评语
                         human_comment = self.extract_human_comments(os.path.join(path, filename))
@@ -1025,16 +1132,24 @@ class EvaluationInterface:
             return {'file_stats': [], 'total_rounds': 0}
         
         file_stats = []
-        total_rounds = len(log_files)  # 每个文件对应一轮对话
+        total_rounds = 0
         
         for log_file in sorted(log_files):
-            # 每个文件对应一轮对话
+            # 统计每个文件的对话轮次
             try:
+                with open(log_file, 'r', encoding='utf-8') as file:
+                    content = file.read()
+                
+                # 使用正则表达式统计对话轮次
+                round_pattern = r'第.*?轮对话'
+                rounds = len(re.findall(round_pattern, content))
+                total_rounds += rounds
+                
                 filename = os.path.basename(log_file)
-                file_stats.append(f"{filename}: 1轮")
+                file_stats.append(f"{filename}: {rounds}轮")
                 
             except Exception as e:
-                print(f"错误: 处理文件 {log_file} 时发生异常 - {e}")
+                print(f"错误: 读取文件 {log_file} 时发生异常 - {e}")
         
         return {'file_stats': file_stats, 'total_rounds': total_rounds}
 
@@ -1057,6 +1172,67 @@ class EvaluationInterface:
         
         # 更新重复动作标签页
         self.update_repetition_content(path, log_files)
+
+    def create_git_push_tab_content(self, parent):
+        """创建git push标签页的内容，位置1显示命令，位置2显示带下拉功能的分支输入框"""
+        # 创建内容框架
+        content_frame = ttk.Frame(parent)
+        content_frame.pack(fill="both", expand=True)
+        
+        # 位置1：命令显示区
+        command_text = tk.Text(content_frame, wrap="word", font=('Arial', 10))
+        command_text.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # 存储文本组件引用
+        if not hasattr(self, 'text_widgets'):
+            self.text_widgets = {}
+        self.text_widgets["git push"] = command_text
+        
+        # 默认命令内容
+        default_branch = "seed_01"
+        git_commands = self.generate_git_commands(default_branch)
+        command_text.insert("1.0", git_commands)
+        command_text.config(state="normal")
+        
+        # 位置2：分支输入框区域 - 与复制按钮在同一水平位置
+        bottom_frame = ttk.Frame(content_frame)
+        bottom_frame.pack(fill="x", padx=10, pady=10)
+        
+        # 左侧：分支标签和输入框
+        branch_frame = ttk.Frame(bottom_frame)
+        branch_frame.pack(side="left", fill="x", expand=True)
+        
+        # 分支标签
+        branch_label = ttk.Label(branch_frame, text="分支名称:")
+        branch_label.pack(side="left", padx=(0, 5))
+        
+        # 创建Combobox作为下拉输入框
+        branch_values = ["seed_01", "seed_02", "seed_03", "main", "master"]  # 预设分支列表
+        branch_var = tk.StringVar()
+        branch_var.set(default_branch)  # 设置默认值
+        
+        branch_combo = ttk.Combobox(branch_frame, textvariable=branch_var, values=branch_values, width=20)
+        branch_combo.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        branch_combo.config(state="normal")  # 允许用户输入
+        
+        # 右侧：复制按钮
+        copy_button = ttk.Button(bottom_frame, text="复制内容", command=lambda: self.copy_text_content("git push"))
+        copy_button.pack(side="right", padx=10, pady=5)
+        
+        # 绑定分支变更事件
+        def on_branch_change(event):
+            selected_branch = branch_var.get()
+            git_commands = self.generate_git_commands(selected_branch)
+            command_text.delete("1.0", tk.END)
+            command_text.insert("1.0", git_commands)
+        
+        branch_combo.bind("<<ComboboxSelected>>", on_branch_change)
+        branch_combo.bind("<KeyRelease>", lambda event: on_branch_change(event))
+    
+    def generate_git_commands(self, branch_name):
+        """根据分支名称生成Git命令序列"""
+        commands = f"# 切换到main分支并拉取最新代码\ngit checkout main\ngit pull origin main\n\n# 创建新分支\ngit checkout -b {branch_name}\n\n# 进行代码修改后，添加并提交\ngit add .\ngit commit -m \"update {branch_name}\"\n\n# 推送到远程仓库\ngit push origin {branch_name}"
+        return commands
 
 def read_opened_windows_folders_from_trae_storage():
     """
